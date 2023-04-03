@@ -1,0 +1,119 @@
+Создаем две сущности (entity) для таблиц User и Profile, используя TypeORM
+
+// user.entity.ts
+import { Entity, Column, PrimaryGeneratedColumn, OneToOne, JoinColumn } from 'typeorm';
+import { Profile } from './profile.entity';
+
+@Entity()
+export class User {
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  @Column({ unique: true })
+  username: string;
+
+  @Column()
+  password: string;
+
+  @OneToOne(() => Profile)
+  @JoinColumn()
+  profile: Profile;
+}
+
+// profile.entity.ts
+import { Entity, Column, PrimaryGeneratedColumn, OneToOne } from 'typeorm';
+import { User } from './user.entity';
+
+@Entity()
+export class Profile {
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  @Column()
+  firstName: string;
+
+  @Column()
+  lastName: string;
+
+  @Column()
+  email: string;
+
+  @Column()
+  phone: string;
+
+  @OneToOne(() => User, (user) => user.profile)
+  user: User;
+}
+
+Создаем сервис для работы с профилем
+
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Profile } from './profile.entity';
+
+@Injectable()
+export class ProfileService {
+  constructor(
+    @InjectRepository(Profile)
+    private readonly profileRepository: Repository<Profile>,
+  ) {}
+
+  async create(profileData: Partial<Profile>): Promise<Profile> {
+    const profile = this.profileRepository.create(profileData);
+    return this.profileRepository.save(profile);
+  }
+
+  async update(id: number, profileData: Partial<Profile>): Promise<Profile> {
+    await this.profileRepository.update(id, profileData);
+    return this.profileRepository.findOne(id);
+  }
+
+  async findById(id: number): Promise<Profile> {
+    return this.profileRepository.findOne(id);
+  }
+
+  async findByUserId(userId: number): Promise<Profile> {
+    return this.profileRepository.findOne({ where: { user: { id: userId } } });
+  }
+}
+
+Создаем контроллер для работы с профилем
+
+import { Controller, Get, Put, UseGuards, Body, Param, Req } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { Profile } from './profile.entity';
+import { ProfileService } from './profile.service';
+
+@Controller('profile')
+export class ProfileController {
+  constructor(private readonly profileService: ProfileService) {}
+
+  @UseGuards(JwtAuthGuard)
+  @Get()
+  async getProfile(@Req() req): Promise<Profile> {
+    const userId = req.user.id;
+    const profile = await this.profileService.findByUserId(userId);
+    if (!profile) {
+      throw new NotFoundException('Profile not found');
+    }
+    return profile;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put()
+  async updateProfile(@Req() req, @Body() profileData: Partial<Profile>): Promise<Profile> {
+    const userId = req.user.id;
+    const profile = await this.profileService.findByUserId(userId);
+    if (!profile) {
+      throw new NotFoundException('Profile not found');
+    }
+    return this.profileService.update(profile.id, profileData);
+  }
+}
+
+Добавляем маршруты в модуль 
+
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { User } from './user.entity';

@@ -1,0 +1,66 @@
+C:\Users\nikol>npm install -g @nestjs/cli
+
+added 250 packages in 36s
+
+44 packages are looking for funding
+  run `npm fund` for details
+npm notice
+npm notice New minor version of npm available! 9.3.1 -> 9.6.3
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v9.6.3
+npm notice Run npm install -g npm@9.6.3 to update!
+npm notice
+
+C:\Users\nikol>cd C:\Users\nikol\Documents\nets
+
+C:\Users\nikol\Documents\nets>nest new servernets
+⚡  We will scaffold your app in a few seconds..
+
+? Which package manager would you ❤️  to use? npm
+CREATE servernets/.eslintrc.js (663 bytes)
+CREATE servernets/.prettierrc (51 bytes)
+CREATE servernets/nest-cli.json (171 bytes)
+CREATE servernets/package.json (1941 bytes)
+CREATE servernets/README.md (3340 bytes)
+CREATE servernets/tsconfig.build.json (97 bytes)
+CREATE servernets/tsconfig.json (546 bytes)
+CREATE servernets/src/app.controller.spec.ts (617 bytes)
+CREATE servernets/src/app.controller.ts (274 bytes)
+CREATE servernets/src/app.module.ts (249 bytes)
+CREATE servernets/src/app.service.ts (142 bytes)
+CREATE servernets/src/main.ts (208 bytes)
+CREATE servernets/test/app.e2e-spec.ts (630 bytes)
+CREATE servernets/test/jest-e2e.json (183 bytes)
+
+√ Installation in progress... ☕
+
+🚀  Successfully created project servernets
+👉  Get started with the following commands:
+
+$ cd servernets
+$ npm run start
+
+
+Failed to execute command: git init
+Git repository has not been initialized
+
+                          Thanks for installing Nest 🙏
+                 Please consider donating to our open collective
+                        to help us maintain this package.
+
+
+               🍷  Donate: https://opencollective.com/nest
+
+
+C:\Users\nikol\Documents\nets>cd servernets
+
+C:\Users\nikol\Documents\nets\servernets> npm run start
+
+> servernets@0.0.1 start
+> nest start
+
+[Nest] 4348  - 03.04.2023, 17:34:47     LOG [NestFactory] Starting Nest application...
+[Nest] 4348  - 03.04.2023, 17:34:47     LOG [InstanceLoader] AppModule dependencies initialized +26ms
+[Nest] 4348  - 03.04.2023, 17:34:48     LOG [RoutesResolver] AppController {/}: +41ms
+[Nest] 4348  - 03.04.2023, 17:34:48     LOG [RouterExplorer] Mapped {/, GET} route +4ms
+[Nest] 4348  - 03.04.2023, 17:34:48     LOG [NestApplication] Nest application successfully started +3ms
+

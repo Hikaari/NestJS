@@ -1,0 +1,132 @@
+import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
+import { TextBlock } from './text-block.entity';
+import { TextBlockService } from './text-block.service';
+import { CreateTextBlockDto } from './dto/create-text-block.dto';
+import { UpdateTextBlockDto } from './dto/update-text-block.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
+
+@Controller('text-blocks')
+export class TextBlockController {
+  constructor(private readonly textBlockService: TextBlockService) {}
+
+  @Post()
+  @Roles('admin')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  create(@Body() createTextBlockDto: CreateTextBlockDto): Promise<TextBlock> {
+    return this.textBlockService.create(createTextBlockDto);
+  }
+
+  @Get()
+  findAll(): Promise<TextBlock[]> {
+    return this.textBlockService.findAll();
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string): Promise<TextBlock> {
+    return this.textBlockService.findOne(id);
+  }
+
+  @Put(':id')
+  @Roles('admin')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  update(
+    @Param('id') id: string,
+    @Body() updateTextBlockDto: UpdateTextBlockDto,
+  ): Promise<TextBlock> {
+    return this.textBlockService.update(id, updateTextBlockDto);
+  }
+
+  @Delete(':id')
+  @Roles('admin')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  remove(@Param('id') id: string): Promise<void> {
+    return this.textBlockService.remove(id);
+  }
+}
+
+// text-block.controller.ts
+@UseGuards(AuthGuard('jwt'), RolesGuard)
+@Roles('admin')
+@Controller('text-block')
+export class TextBlockController {
+  constructor(private readonly textBlockService: TextBlockService) {}
+
+  // ...
+
+  @Post()
+  async create(@Body() createTextBlockDto: CreateTextBlockDto) {
+    return this.textBlockService.create(createTextBlockDto);
+  }
+
+  @Put(':id')
+  async update(
+    @Param('id') id: string,
+    @Body() updateTextBlockDto: UpdateTextBlockDto,
+  ) {
+    return this.textBlockService.update(id, updateTextBlockDto);
+  }
+
+  @Delete(':id')
+  async remove(@Param('id') id: string) {
+    return this.textBlockService.remove(id);
+  }
+}
+
+// text-block.service.ts
+@Injectable()
+export class TextBlockService {
+  constructor(
+    @InjectRepository(TextBlock)
+    private readonly textBlockRepository: Repository<TextBlock>,
+  ) {}
+
+  // ...
+
+  async create(createTextBlockDto: CreateTextBlockDto) {
+    const textBlock = this.textBlockRepository.create(createTextBlockDto);
+    return this.textBlockRepository.save(textBlock);
+  }
+
+  async update(id: string, updateTextBlockDto: UpdateTextBlockDto) {
+    await this.textBlockRepository.update(id, updateTextBlockDto);
+    return this.textBlockRepository.findOne(id);
+  }
+
+  async remove(id: string) {
+    return this.textBlockRepository.delete(id);
+  }
+}
+
+// text-block.controller.ts
+@Controller('text-block')
+export class TextBlockController {
+  constructor(private readonly textBlockService: TextBlockService) {}
+
+  // ...
+
+  @Get()
+  async findAll(@Query() query: FindTextBlocksQueryDto) {
+    return this.textBlockService.findAll(query.group);
+  }
+}
+
+// text-block.service.ts
+@Injectable()
+export class TextBlockService {
+  constructor(
+    @InjectRepository(TextBlock)
+    private readonly textBlockRepository: Repository<TextBlock>,
+  ) {}
+
+  // ...
+
+  async findAll(group?: string) {
+    if (group) {
+      return this.textBlockRepository.find({ where: { group } });
+    } else {
+      return this.textBlockRepository.find();
+    }
+  }
+}

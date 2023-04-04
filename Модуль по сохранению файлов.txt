@@ -1,0 +1,106 @@
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, Like } from 'typeorm';
+import { v4 as uuid } from 'uuid';
+import { File } from './file.entity';
+
+@Injectable()
+export class FileService {
+  constructor(
+    @InjectRepository(File)
+    private fileRepository: Repository<File>,
+  ) {}
+
+  async create(file: Express.Multer.File, essenceTable: string, essenceId: number): Promise<File> {
+    const newFile = new File();
+    newFile.id = uuid();
+    newFile.filename = file.filename;
+    newFile.originalname = file.originalname;
+    newFile.mimetype = file.mimetype;
+    newFile.size = file.size;
+    newFile.essenceTable = essenceTable;
+    newFile.essenceId = essenceId;
+    const savedFile = await this.fileRepository.save(newFile);
+    return savedFile;
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.fileRepository.delete(id);
+  }
+
+  async deleteUnusedFiles(): Promise<void> {
+    const unusedFiles = await this.fileRepository.find({
+      where: {
+        essenceTable: null,
+        essenceId: null,
+        createdAt: Like(`%${new Date(Date.now() - 60 * 60 * 1000).toISOString()}%`)
+      }
+    });
+    await Promise.all(unusedFiles.map(file => this.delete(file.id)));
+  }
+}
+
+import { Controller, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { FileService } from './file.service';
+
+@Controller('files')
+export class FileController {
+  constructor(private fileService: FileService) {}
+
+  @Post()
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadFile(@UploadedFile() file: Express.Multer.File, essenceTable: string, essenceId: number): Promise<File> {
+    return this.fileService.create(file, essenceTable, essenceId);
+  }
+}
+
+export class TextBlock {
+  id: number;
+  text: string;
+  file: any; // поле для файла
+}
+
+export class TextBlockService {
+  constructor(private readonly fileService: FileService) {}
+
+  // методы сервиса
+}
+
+export class TextBlockService {
+  constructor(private readonly fileService: FileService) {}
+
+  async createTextBlock(textBlock: TextBlock): Promise<TextBlock> {
+    const file = textBlock.file;
+    delete textBlock.file; // удаляем поле файла из объекта, чтобы его можно было сохранить отдельно
+    const savedTextBlock = await this.textBlockRepository.save(textBlock);
+    if (file) {
+      await this.fileService.saveFile(file, 'text_block', savedTextBlock.id); // сохраняем файл
+    }
+    return savedTextBlock;
+  }
+
+  async updateTextBlock(id: number, textBlock: TextBlock): Promise<TextBlock> {
+    const file = textBlock.file;
+    delete textBlock.file;
+    const updatedTextBlock = await this.textBlockRepository.update(id, textBlock);
+    if (file) {
+      await this.fileService.saveFile(file, 'text_block', id);
+    }
+    return updatedTextBlock;
+  }
+
+  // другие методы
+}
+
+export class TextBlockService {
+  constructor(private readonly fileService: FileService) {}
+
+  async deleteTextBlock(id: number): Promise<void> {
+    await this.textBlockRepository.delete(id);
+    await this.fileService.deleteUnusedFiles(); // удаляем неиспользуемые файлы
+  }
+
+  // другие методы
+}
+

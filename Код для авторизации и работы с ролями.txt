@@ -1,85 +1,233 @@
-Создание сервиса авторизации (AuthService) для реализации стратегий аутентификации и генерации JWT-токенов
 
+
+// app.module.ts
+import { Module } from '@nestjs/common';
+import { PassportModule } from '@nestjs/passport';
+import { JwtModule } from '@nestjs/jwt';
+import { RoleModule } from '@nestjs/role';
+import { AuthService } from './auth/auth.service';
+import { JwtStrategy } from './auth/jwt.strategy';
+import { UsersModule } from './users/users.module';
+import { AppController } from './app.controller';
+
+@Module({
+  imports: [
+    UsersModule,
+    RoleModule,
+    PassportModule,
+    JwtModule.register({
+      secret: 'your-secret-key',
+      signOptions: { expiresIn: '60s' },
+    }),
+  ],
+  controllers: [AppController],
+  providers: [AuthService, JwtStrategy],
+})
+export class AppModule {}
+
+// auth/auth.service.ts
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { User } from './user.entity';
+import { RoleService } from '@nestjs/role';
+import { UserService } from '../users/user.service';
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(
+    private usersService: UserService,
+    private roleService: RoleService,
+    private jwtService: JwtService,
+  ) {}
 
-  async validateUser(username: string, password: string): Promise<User | null> {
-    // Код для проверки пользовательских данных (логин/пароль) 
+  async validateUser(username: string, password: string): Promise<any> {
+    const user = await this.usersService.findOne(username);
+    if (user && user.password === password) {
+      const { password, ...result } = user;
+      return result;
+    }
+    return null;
   }
 
-  async login(user: User): Promise<{ accessToken: string }> {
-    const payload = { username: user.username, sub: user.id };
+  async login(user: any) {
+    const payload = { username: user.username, sub: user.userId };
     return {
-      accessToken: this.jwtService.sign(payload),
+      access_token: this.jwtService.sign(payload),
     };
   }
+
+  async assignRoleToUser(userId: number, roleName: string) {
+    const role = await this.roleService.findOne({ name: roleName });
+    if (role) {
+      await this.roleService.assignRoleToUser(userId, role.id);
+    }
+  }
 }
 
-Создание стратегии аутентификации (LocalStrategy) для аутентификации пользователя по логину и паролю
-
+// auth/jwt.strategy.ts
 import { Injectable } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
-import { Strategy } from 'passport-local';
-import { AuthService } from './auth.service';
+import { ExtractJwt, Strategy } from 'passport-jwt';
 
 @Injectable()
-export class LocalStrategy extends PassportStrategy(Strategy) {
-  constructor(private readonly authService: AuthService) {
-    super({ usernameField: 'username' });
+export class JwtStrategy extends PassportStrategy(Strategy) {
+  constructor() {
+    super({
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ignoreExpiration: false,
+      secretOrKey: 'your-secret-key',
+    });
   }
 
-  async validate(username: string, password: string): Promise<any> {
-    const user = await this.authService.validateUser(username, password);
-    if (!user) {
-      throw new UnauthorizedException();
-    }
-    return user;
+  async validate(payload: any) {
+    return { userId: payload.sub, username: payload.username };
   }
 }
 
-Создайние гварда (JwtAuthGuard) для защиты роутов с использованием JWT-токенов
+// users/user.service.ts
+import { Injectable } from '@nestjs/common';
+import { User } from './user.entity';
 
-import { ExecutionContext, Injectable } from '@nestjs/common';
+@Injectable()
+export class UserService {
+  private readonly users: User[];
+
+  constructor() {
+    this.users = [
+      {
+        userId: 1,
+        username: 'john',
+        password: 'changeme',
+      },
+      {
+        userId: 2,
+        username: 'maria',
+        password: 'secret',
+      },
+    ];
+  }
+
+  async findOne(username: string): Promise<User | undefined> {
+    return this.users.find(user => user.username === username);
+  }
+}
+
+// app.controller.ts (продолжение)
+import { Controller, Request, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { RolesGuard } from './auth/roles.guard';
+import { Roles } from './auth/roles.decorator';
+import { AuthService } from './auth/auth.service';
 
-@Injectable()
-export class JwtAuthGuard extends AuthGuard('jwt') {
-  canActivate(context: ExecutionContext) {
-    return super.canActivate(context);
-  }
+@Controller()
+export class AppController {
+  constructor(private authService: AuthService) {}
 
-  handleRequest(err, user, info) {
-    if (err || !user) {
-      throw err || new UnauthorizedException();
-    }
-    return user;
-  }
-}
-
-
-Создайние контроллера (AuthController) для обработки запросов авторизации и выдачи JWT-токенов
-
-import { Controller, Post, Request, UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from './jwt-auth.guard';
-import { LocalAuthGuard } from './local-auth.guard';
-import { AuthService } from './auth.service';
-
-@Controller('auth')
-export class AuthController {
-  constructor(private readonly authService: AuthService) {}
-
-  @UseGuards(LocalAuthGuard)
-  @Post('login')
+  @UseGuards(AuthGuard('local'))
+  @Post('auth/login')
   async login(@Request() req) {
     return this.authService.login(req.user);
   }
 
-  @UseGuards(JwtAuthGuard)
-  @Get('profile')
-  async profile(@Request() req) {
-    return req.user;
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('admin')
+  @Post('assignRole')
+  async assignRoleToUser(@Request() req) {
+    const { userId, roleName } = req.body;
+    return this.authService.assignRoleToUser(userId, roleName);
+  }
+}
+
+Сущность User
+
+// user.entity.ts
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+
+@Entity()
+export class User {
+  @PrimaryGeneratedColumn()
+  userId: number;
+
+  @Column()
+  username: string;
+
+  @Column()
+  password: string;
+
+  @Column({ default: 'user' })
+  role: string;
+}
+
+
+
+// roles.guard.ts
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { Observable } from 'rxjs';
+
+@Injectable()
+export class RolesGuard implements CanActivate {
+  constructor(private readonly reflector: Reflector) {}
+
+  canActivate(
+    context: ExecutionContext,
+  ): boolean | Promise<boolean> | Observable<boolean> {
+    const requiredRoles = this.reflector.getAllAndOverride<string[]>('roles', [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!requiredRoles) {
+      return true;
+    }
+    const { user } = context.switchToHttp().getRequest();
+    return requiredRoles.some((role) => user.role?.includes(role));
+  }
+}
+
+// roles.decorator.ts
+import { SetMetadata } from '@nestjs/common';
+
+export const Roles = (...roles: string[]) => SetMetadata('roles', roles);
+
+
+
+// users.controller.ts
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+import { AuthService } from './auth.service';
+import { Roles } from './roles.decorator';
+import { RolesGuard } from './roles.guard';
+
+@Controller('users')
+export class UsersController {
+  constructor(private readonly authService: AuthService) {}
+
+  @Post('login')
+  async login(@Body() body: { username: string; password: string }) {
+    const user = await this.authService.validateUser(
+      body.username,
+      body.password,
+    );
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+
+const accessToken = this.authService.generateAccessToken(user);
+    return { accessToken };
+  }
+
+  @Post('register')
+  async register(
+    @Body() body: { username: string; password: string },
+  ): Promise<{ accessToken: string }> {
+    const user = await this.authService.createUser(body.username, body.password);
+    const accessToken = this.authService.generateAccessToken(user);
+    return { accessToken };
+  }
+
+  @Post('admin')
+  @Roles('admin')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  async admin() {
+    return 'Admin only!';
+  }
+}

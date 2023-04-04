@@ -1,6 +1,25 @@
-Для работы с профилем и авторизацией, создаем две таблицы: user и profile
+import { Entity, Column, PrimaryGeneratedColumn, OneToOne, JoinColumn } from 'typeorm';
+import { User } from './user.entity';
 
-// user.entity.ts
+@Entity()
+export class Profile {
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  @Column()
+  lastName: string;
+
+  @Column()
+  firstName: string;
+
+  @Column()
+  phone: string;
+
+  @OneToOne(() => User)
+  @JoinColumn()
+  user: User;
+}
+
 import { Entity, Column, PrimaryGeneratedColumn, OneToOne, JoinColumn } from 'typeorm';
 import { Profile } from './profile.entity';
 
@@ -10,96 +29,203 @@ export class User {
   id: number;
 
   @Column()
-  email: string;
+  username: string;
 
   @Column()
   password: string;
 
-  @OneToOne(() => Profile, { cascade: true })
+  @OneToOne(() => Profile, profile => profile.user)
   @JoinColumn()
   profile: Profile;
 }
 
-// profile.entity.ts
-import { Entity, Column, PrimaryGeneratedColumn, OneToOne } from 'typeorm';
-import { User } from './user.entity';
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Profile } from './profile.entity';
 
-@Entity()
-export class Profile {
-  @PrimaryGeneratedColumn()
-  id: number;
+@Injectable()
+export class ProfileService {
+  constructor(
+    @InjectRepository(Profile)
+    private readonly profileRepository: Repository<Profile>,
+  ) {}
 
-  @Column()
-  firstName: string;
+  async create(userId: number, lastName: string, firstName: string, phone: string): Promise<Profile> {
+    const profile = new Profile();
+    profile.user = { id: userId } as any;
+    profile.lastName = lastName;
+    profile.firstName = firstName;
+    profile.phone = phone;
+    return await this.profileRepository.save(profile);
+  }
 
-  @Column()
-  lastName: string;
-
-  @Column()
-  phone: string;
-
-  @OneToOne(() => User, (user) => user.profile)
-  user: User;
+  async findOneByUserId(userId: number): Promise<Profile> {
+    return await this.profileRepository.findOne({ where: { user: { id: userId } } });
+  }
 }
 
-
-Регистрация пользователя и создания профиля в базе данных
-
-
-import { Controller, Post, Body, UseGuards, Req } from '@nestjs/common';
-import { AuthService } from './auth.service';
-import { UserService } from './user.service';
+import { Controller, Get, Post, UseGuards, Request } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+import { RolesGuard } from './roles.guard';
+import { Roles } from './roles.decorator';
 import { ProfileService } from './profile.service';
-import { CreateUserDto } from './dto/create-user.dto';
-import { CreateProfileDto } from './dto/create-profile.dto';
-import { LocalAuthGuard } from './guards/local-auth.guard';
 
-@Controller()
+@Controller('profile')
+export class ProfileController {
+  constructor(private readonly profileService: ProfileService) {}
+
+  @Get()
+  @UseGuards(AuthGuard('jwt'))
+  async findOne(@Request() req) {
+    const profile = await this.profileService.findOneByUserId(req.user.id);
+    return { profile };
+  }
+
+  @Post()
+  @UseGuards(AuthGuard('jwt'))
+  async create(@Request() req, @Body() body: { lastName: string; firstName: string; phone: string }) {
+    const profile = await this.profileService.create(req.user.id, body.lastName, body.firstName, body.phone);
+    return { profile };
+  }
+}
+
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
+import { AuthModule } from './auth/auth.module';
+import { User } from './user.entity';
+import { Profile } from './profile.entity';
+import { ProfileController } from './profile.controller';
+import { ProfileService } from './profile.service';
+
+@Module({
+  imports: [
+    TypeOrmModule.forRoot({
+      type: 'sqlite',
+      database: 'db.sqlite',
+      entities: [User, Profile],
+      synchronize: true,
+    }),
+    AuthModule,
+  ],
+  controllers: [AppController, ProfileController],
+  providers: [AppService, ProfileService],
+})
+export class AppModule {}
+
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { AuthService } from './auth.service';
+import { LocalAuthGuard } from './local-auth.guard';
+import { CreateUserDto } from './dto/create-user.dto';
+import { User } from '../user.entity';
+import { Profile } from '../profile.entity';
+import { ProfileService } from '../profile.service';
+import { CreateProfileDto } from '../profile/dto/create-profile.dto';
+
+@Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
-    private readonly userService: UserService,
     private readonly profileService: ProfileService,
   ) {}
 
-  @Post('auth/register')
-  async register(
+  @UseGuards(LocalAuthGuard)
+  @Post('login')
+  async login(@Body() createUserDto: CreateUserDto): Promise<any> {
+    return this.authService.login(createUserDto);
+  }
+
+  @Post('register')
+  async registerWithProfile(
     @Body() createUserDto: CreateUserDto,
     @Body() createProfileDto: CreateProfileDto,
-  ) {
-    const user = await this.userService.create(createUserDto);
-    const profile = await this.profileService.create(createProfileDto, user.id);
+  ): Promise<User> {
+    const user = await this.authService.register(createUserDto);
+    createProfileDto.userId = user.id;
+    await this.profileService.create(createProfileDto);
+    return user;
+  }
+}
 
-    return { user, profile };
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Profile } from './profile.entity';
+import { CreateProfileDto } from './dto/create-profile.dto';
+
+@Injectable()
+export class ProfileService {
+  constructor(
+    @InjectRepository(Profile)
+    private profileRepository: Repository<Profile>,
+  ) {}
+
+  async create(createProfileDto: CreateProfileDto): Promise<Profile> {
+    const profile = new Profile();
+    Object.assign(profile, createProfileDto);
+    return this.profileRepository.save(profile);
   }
 
-  // Для удаления и редактирования добавляем проверку прав пользователя
-  @UseGuards(LocalAuthGuard)
-  @Post('profile/delete')
-  async deleteProfile(@Req() req) {
-    const userId = req.user.id;
-    // Проверяем, что пользователь может удалить только свой профиль или администратор
-    const canDelete = await this.profileService.canDeleteProfile(userId);
-    if (canDelete) {
-      await this.profileService.delete(userId);
-      await this.userService.delete(userId);
-      return { message: 'Profile deleted successfully' };
-    } else {
-      throw new ForbiddenException('You are not authorized to perform this action');
-    }
+  async findByUserId(userId: number): Promise<Profile> {
+    return this.profileRepository.findOne({ userId });
+  }
+}
+
+import {
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Delete,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { Profile } from './profile.entity';
+import { ProfileService } from './profile.service';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { GetUser } from '../auth/get-user.decorator';
+import { User } from '../user.entity';
+
+@Controller('profiles')
+export class ProfileController {
+  constructor(private readonly profileService: ProfileService) {}
+
+  @Get(':id')
+  async findOne(@Param('id') id: number): Promise<Profile> {
+    return this.profileService.findOne(id);
   }
 
-  @UseGuards(LocalAuthGuard)
-  @Post('profile/edit')
-  async editProfile(@Req() req, @Body() createProfileDto: CreateProfileDto) {
-    const userId = req.user.id;
-    // Проверяем, что пользователь может редактировать только свой профиль или администратор
-    const canEdit = await this.profileService.canEditProfile(userId);
-    if (canEdit) {
-      const profile = await this.profileService.edit(userId, createProfileDto);
-      return { profile };
-    } else {
-      throw new ForbiddenException('You are not authorized to perform this action');
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin', 'user')
+  @Patch(':id')
+  async update(
+    @Param('id') id: number,
+    @Body() updateProfileDto: UpdateProfileDto,
+    @GetUser() user: User,
+  ): Promise<Profile> {
+    const profile = await this.profileService.findByUserId(user.id);
+    if (user.role !== 'admin' && profile.userId !== user.id) {
+      throw new UnauthorizedException();
     }
+    return this.profileService.update(id, updateProfileDto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin', 'user')
+  @Delete(':id')
+  async delete(
+    @Param('id') id: number,
+    @GetUser() user: User,
+  ): Promise<void> {
+    const profile = await this.profileService.findByUserId(user.id);
+    if (user.role !== 'admin' && profile.userId !== user.id) {
+      throw new UnauthorizedException();
+    }
+    return this.profileService.delete(id);
   }
 }
